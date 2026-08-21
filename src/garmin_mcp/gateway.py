@@ -62,12 +62,17 @@ class GarminGateway:
         activity_type: str | None = None,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
-        activities = self.client().get_activities_by_date(
-            start_date,
-            end_date,
-            activity_type,
-            "desc",
-        )
+        client = self.client()
+        params = {
+            "startDate": start_date,
+            "endDate": end_date,
+            "start": "0",
+            "limit": str(limit),
+            "sortOrder": "desc",
+        }
+        if activity_type:
+            params["activityType"] = activity_type
+        activities = client.connectapi(client.garmin_connect_activities, params=params) or []
         return [normalize_activity(activity) for activity in activities[:limit]]
 
     def activity_summary(self, activity_id: int | str) -> dict[str, Any]:

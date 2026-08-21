@@ -56,6 +56,22 @@ def test_normalize_activity_supports_detailed_response_shape() -> None:
     assert result["normalized_power_watts"] == 212
 
 
+def test_normalize_activity_supports_detailed_cycling_cadence() -> None:
+    result = normalize_activity(
+        {
+            "activityId": 789,
+            "activityTypeDTO": {"typeKey": "cycling"},
+            "summaryDTO": {
+                "averageBikeCadence": 86,
+                "maxBikeCadence": 112,
+            },
+        }
+    )
+
+    assert result["average_cadence"] == 86
+    assert result["max_cadence"] == 112
+
+
 def test_normalize_splits_returns_compact_laps() -> None:
     result = normalize_splits(
         {
@@ -76,6 +92,24 @@ def test_normalize_splits_returns_compact_laps() -> None:
     assert result["lap_count"] == 1
     assert result["laps"][0]["average_pace_seconds_per_km"] == 300.0
     assert "startLatitude" not in result["laps"][0]
+
+
+def test_normalize_splits_supports_cycling_cadence() -> None:
+    result = normalize_splits(
+        {
+            "activityId": 789,
+            "lapDTOs": [
+                {
+                    "lapIndex": 1,
+                    "averageBikeCadence": 84,
+                    "maxBikeCadence": 108,
+                }
+            ],
+        }
+    )
+
+    assert result["laps"][0]["average_cadence"] == 84
+    assert result["laps"][0]["max_cadence"] == 108
 
 
 def test_normalize_recovery_sources_handle_available_and_missing_data() -> None:
@@ -190,3 +224,27 @@ def test_normalize_training_status_reads_nested_metrics() -> None:
     assert result["acute_training_load"] == 410
     assert result["chronic_training_load"] == 380
     assert result["vo2_max"] == 52.4
+
+
+def test_normalize_training_status_reads_acute_load_dto() -> None:
+    result = normalize_training_status(
+        {
+            "mostRecentTrainingStatus": {
+                "latestTrainingStatusData": {
+                    "123456789": {
+                        "calendarDate": "2026-08-20",
+                        "trainingStatus": 7,
+                        "acuteTrainingLoadDTO": {
+                            "dailyTrainingLoadAcute": 410,
+                            "dailyTrainingLoadChronic": 380,
+                            "dailyAcuteChronicWorkloadRatio": 1.08,
+                        },
+                    }
+                }
+            }
+        }
+    )
+
+    assert result["acute_training_load"] == 410
+    assert result["chronic_training_load"] == 380
+    assert result["acute_chronic_ratio"] == 1.08

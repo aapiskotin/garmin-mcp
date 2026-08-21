@@ -87,12 +87,14 @@ def normalize_activity(payload: dict[str, Any]) -> dict[str, Any]:
                 "averageRunningCadenceInStepsPerMinute",
                 "averageRunCadence",
                 "averageBikingCadenceInRevPerMinute",
+                "averageBikeCadence",
             ),
             "max_cadence": _first(
                 summary,
                 "maxRunningCadenceInStepsPerMinute",
                 "maxRunCadence",
                 "maxBikingCadenceInRevPerMinute",
+                "maxBikeCadence",
             ),
             "elevation_gain_m": summary.get("elevationGain"),
             "elevation_loss_m": summary.get("elevationLoss"),
@@ -137,11 +139,13 @@ def normalize_splits(payload: dict[str, Any]) -> dict[str, Any]:
                         lap,
                         "averageRunCadence",
                         "averageBikingCadenceInRevPerMinute",
+                        "averageBikeCadence",
                     ),
                     "max_cadence": _first(
                         lap,
                         "maxRunCadence",
                         "maxBikingCadenceInRevPerMinute",
+                        "maxBikeCadence",
                     ),
                     "elevation_gain_m": lap.get("elevationGain"),
                     "elevation_loss_m": lap.get("elevationLoss"),
@@ -270,6 +274,9 @@ def normalize_training_status(payload: dict[str, Any]) -> dict[str, Any]:
         raw_status_data,
         ("calendarDate", "date", "trainingStatus", "status", "statusKey"),
     )
+    acute_load_data = status_data.get("acuteTrainingLoadDTO")
+    if not isinstance(acute_load_data, dict):
+        acute_load_data = {}
     load_data = _metric_data(
         load,
         (
@@ -290,6 +297,32 @@ def normalize_training_status(payload: dict[str, Any]) -> dict[str, Any]:
         ("generic",),
     )
     acclimation_data = acclimation if isinstance(acclimation, dict) else {}
+    acute_training_load = _first(
+        acute_load_data,
+        "dailyTrainingLoadAcute",
+        "acuteTrainingLoad",
+        "acuteLoad",
+    )
+    if acute_training_load is None:
+        acute_training_load = _first(load_data, "acuteTrainingLoad", "acuteLoad")
+    chronic_training_load = _first(
+        acute_load_data,
+        "dailyTrainingLoadChronic",
+        "chronicTrainingLoad",
+        "chronicLoad",
+    )
+    if chronic_training_load is None:
+        chronic_training_load = _first(load_data, "chronicTrainingLoad", "chronicLoad")
+    acute_chronic_ratio = _first(
+        acute_load_data,
+        "dailyAcuteChronicWorkloadRatio",
+        "acuteChronicWorkloadRatio",
+        "acuteChronicRatio",
+    )
+    if acute_chronic_ratio is None:
+        acute_chronic_ratio = _first(
+            load_data, "acuteChronicWorkloadRatio", "acuteChronicRatio"
+        )
 
     metrics = _compact(
         {
@@ -299,11 +332,9 @@ def normalize_training_status(payload: dict[str, Any]) -> dict[str, Any]:
                 status_data, "trainingStatusFeedbackPhrase", "feedbackPhrase", "feedback"
             ),
             "weekly_training_load": _first(status_data, "weeklyTrainingLoad", "trainingLoad"),
-            "acute_training_load": _first(load_data, "acuteTrainingLoad", "acuteLoad"),
-            "chronic_training_load": _first(load_data, "chronicTrainingLoad", "chronicLoad"),
-            "acute_chronic_ratio": _first(
-                load_data, "acuteChronicWorkloadRatio", "acuteChronicRatio"
-            ),
+            "acute_training_load": acute_training_load,
+            "chronic_training_load": chronic_training_load,
+            "acute_chronic_ratio": acute_chronic_ratio,
             "load_balance": _first(load_data, "trainingLoadBalance", "loadBalance"),
             "vo2_max": _first(vo2_data, "vo2MaxPreciseValue", "vo2MaxValue", "vo2Max"),
             "heat_acclimation": _first(
