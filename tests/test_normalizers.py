@@ -4,6 +4,8 @@ from garmin_mcp.normalizers import (
     normalize_hrv,
     normalize_sleep,
     normalize_splits,
+    normalize_training_readiness,
+    normalize_training_status,
 )
 
 
@@ -18,6 +20,7 @@ def test_normalize_activity_keeps_planning_metrics_and_omits_location() -> None:
             "duration": 1500.0,
             "averageSpeed": 4.0,
             "averageHR": 151,
+            "normPower": 211,
             "startLatitude": 52.1,
             "ownerId": 99,
             "hrTimeInZone_2": 600.0,
@@ -26,6 +29,7 @@ def test_normalize_activity_keeps_planning_metrics_and_omits_location() -> None:
 
     assert result["activity_id"] == 123
     assert result["average_pace_seconds_per_km"] == 250.0
+    assert result["normalized_power_watts"] == 211
     assert result["heart_rate_zone_seconds"] == {"zone_2": 600.0}
     assert "startLatitude" not in result
     assert "ownerId" not in result
@@ -41,6 +45,7 @@ def test_normalize_activity_supports_detailed_response_shape() -> None:
                 "distance": 10000.0,
                 "averageMovingSpeed": 2.5,
                 "averageRunCadence": 170,
+                "normalizedPower": 212,
             },
         }
     )
@@ -48,6 +53,7 @@ def test_normalize_activity_supports_detailed_response_shape() -> None:
     assert result["sport"] == "running"
     assert result["average_pace_seconds_per_km"] == 400.0
     assert result["average_cadence"] == 170
+    assert result["normalized_power_watts"] == 212
 
 
 def test_normalize_splits_returns_compact_laps() -> None:
@@ -109,3 +115,78 @@ def test_recovery_source_with_only_a_date_is_unavailable() -> None:
         "available": False,
         "days": [{"date": "2026-08-20"}],
     }
+
+
+def test_normalize_hrv_reads_nested_baseline() -> None:
+    result = normalize_hrv(
+        {
+            "hrvSummary": {
+                "calendarDate": "2026-08-20",
+                "baseline": {
+                    "lowUpper": 30,
+                    "balancedLow": 35,
+                    "balancedUpper": 55,
+                },
+            }
+        }
+    )
+
+    assert result["baseline_low_ms"] == 35
+    assert result["baseline_high_ms"] == 55
+
+
+def test_normalize_training_readiness_selects_latest_snapshot() -> None:
+    result = normalize_training_readiness(
+        [
+            {"timestamp": "2026-08-20T06:00:00", "score": 60},
+            {"timestamp": "2026-08-20T12:00:00", "score": 75},
+        ]
+    )
+
+    assert result["score"] == 75
+
+
+def test_normalize_training_readiness_supports_single_snapshot() -> None:
+    result = normalize_training_readiness(
+        {"calendarDate": "2026-08-20", "score": 72, "level": "GOOD"}
+    )
+
+    assert result["score"] == 72
+    assert result["level"] == "GOOD"
+
+
+def test_normalize_training_status_reads_nested_metrics() -> None:
+    result = normalize_training_status(
+        {
+            "mostRecentTrainingStatus": {
+                "latestTrainingStatusData": {
+                    "123456789": {
+                        "calendarDate": "2026-08-20",
+                        "trainingStatus": 7,
+                        "trainingStatusFeedbackPhrase": "PRODUCTIVE_3",
+                    }
+                }
+            },
+            "mostRecentTrainingLoadBalance": {
+                "metricsTrainingLoadBalanceDTOMap": {
+                    "2026-08-20": {
+                        "acuteTrainingLoad": 410,
+                        "chronicTrainingLoad": 380,
+                    }
+                }
+            },
+            "mostRecentVO2Max": {
+                "generic": {
+                    "calendarDate": "2026-08-20",
+                    "vo2MaxPreciseValue": 52.4,
+                }
+            },
+        }
+    )
+
+    assert result["available"] is True
+    assert result["status"] == 7
+    assert result["feedback"] == "PRODUCTIVE_3"
+    assert result["acute_training_load"] == 410
+    assert result["chronic_training_load"] == 380
+    assert result["vo2_max"] == 52.4

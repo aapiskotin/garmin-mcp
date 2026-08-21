@@ -15,6 +15,36 @@ def _first(source: dict[str, Any], *keys: str) -> Any:
     return None
 
 
+def _recency_key(source: dict[str, Any]) -> str:
+    value = _first(source, "timestamp", "timestampLocal", "calendarDate", "date")
+    return str(value) if value is not None else ""
+
+
+def _latest_mapping_value(source: dict[str, Any]) -> dict[str, Any]:
+    values = [value for value in source.values() if isinstance(value, dict)]
+    return max(values, key=_recency_key, default={})
+
+
+def _metric_data(
+    source: Any,
+    direct_keys: tuple[str, ...],
+    preferred_nested_keys: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    if not isinstance(source, dict):
+        return {}
+    if any(key in source for key in direct_keys):
+        return source
+    for key in preferred_nested_keys:
+        nested = source.get(key)
+        if isinstance(nested, dict):
+            if any(metric_key in nested for metric_key in direct_keys):
+                return nested
+            nested_value = _latest_mapping_value(nested)
+            if nested_value:
+                return nested_value
+    return _latest_mapping_value(source)
+
+
 def _pace_seconds_per_km(speed: Any) -> float | None:
     if not isinstance(speed, (int, float)) or speed <= 0:
         return None
@@ -50,7 +80,7 @@ def normalize_activity(payload: dict[str, Any]) -> dict[str, Any]:
             "average_heart_rate_bpm": summary.get("averageHR"),
             "max_heart_rate_bpm": summary.get("maxHR"),
             "average_power_watts": _first(summary, "avgPower", "averagePower"),
-            "normalized_power_watts": summary.get("normalizedPower"),
+            "normalized_power_watts": _first(summary, "normalizedPower", "normPower"),
             "max_power_watts": summary.get("maxPower"),
             "average_cadence": _first(
                 summary,
@@ -72,9 +102,7 @@ def normalize_activity(payload: dict[str, Any]) -> dict[str, Any]:
             "aerobic_training_effect": summary.get("aerobicTrainingEffect"),
             "anaerobic_training_effect": summary.get("anaerobicTrainingEffect"),
             "aerobic_training_effect_message": summary.get("aerobicTrainingEffectMessage"),
-            "anaerobic_training_effect_message": summary.get(
-                "anaerobicTrainingEffectMessage"
-            ),
+            "anaerobic_training_effect_message": summary.get("anaerobicTrainingEffectMessage"),
             "body_battery_change": summary.get("differenceBodyBattery"),
             "workout_id": payload.get("workoutId"),
             "lap_count": payload.get("lapCount"),
@@ -148,6 +176,15 @@ def normalize_hrv(payload: dict[str, Any] | None) -> dict[str, Any]:
     if not payload:
         return {"available": False}
     summary = payload.get("hrvSummary") or payload
+    baseline = summary.get("baseline")
+    if not isinstance(baseline, dict):
+        baseline = {}
+    baseline_low = _first(baseline, "balancedLow", "lowUpper")
+    if baseline_low is None:
+        baseline_low = _first(summary, "baselineLowUpper", "baselineLow")
+    baseline_high = _first(baseline, "balancedUpper")
+    if baseline_high is None:
+        baseline_high = _first(summary, "baselineBalancedUpper", "baselineHigh")
     return _compact(
         {
             "available": True,
@@ -157,8 +194,8 @@ def normalize_hrv(payload: dict[str, Any] | None) -> dict[str, Any]:
             "last_night_5_min_high_ms": _first(
                 summary, "lastNight5MinHigh", "lastNightFiveMinuteHigh"
             ),
-            "baseline_low_ms": _first(summary, "baselineLowUpper", "baselineLow"),
-            "baseline_high_ms": _first(summary, "baselineBalancedUpper", "baselineHigh"),
+            "baseline_low_ms": baseline_low,
+            "baseline_high_ms": baseline_high,
             "status": _first(summary, "status", "statusKey"),
             "feedback": _first(summary, "feedbackPhrase", "feedback"),
         }
@@ -174,9 +211,7 @@ def normalize_body_battery(payload: list[dict[str, Any]]) -> dict[str, Any]:
         numeric_values = [
             item[-1]
             for item in values
-            if isinstance(item, (list, tuple))
-            and item
-            and isinstance(item[-1], (int, float))
+            if isinstance(item, (list, tuple)) and item and isinstance(item[-1], (int, float))
         ]
         days.append(
             _compact(
@@ -194,10 +229,18 @@ def normalize_body_battery(payload: list[dict[str, Any]]) -> dict[str, Any]:
     return {"available": available, "days": days}
 
 
-def normalize_training_readiness(payload: list[dict[str, Any]]) -> dict[str, Any]:
+def normalize_training_readiness(
+    payload: list[dict[str, Any]] | dict[str, Any] | None,
+) -> dict[str, Any]:
     if not payload:
         return {"available": False}
-    item = payload[0]
+    if isinstance(payload, dict):
+        item = payload
+    else:
+        snapshots = [snapshot for snapshot in payload if isinstance(snapshot, dict)]
+        item = max(snapshots, key=_recency_key, default={})
+    if not item:
+        return {"available": False}
     return _compact(
         {
             "available": True,
@@ -220,9 +263,32 @@ def normalize_training_status(payload: dict[str, Any]) -> dict[str, Any]:
     load = payload.get("mostRecentTrainingLoadBalance")
     vo2_max = payload.get("mostRecentVO2Max")
     acclimation = payload.get("heatAltitudeAcclimationDTO")
-    status_data = status.get("latestTrainingStatusData", status) if isinstance(status, dict) else {}
-    load_data = load if isinstance(load, dict) else {}
-    vo2_data = vo2_max if isinstance(vo2_max, dict) else {}
+    raw_status_data = (
+        status.get("latestTrainingStatusData", status) if isinstance(status, dict) else {}
+    )
+    status_data = _metric_data(
+        raw_status_data,
+        ("calendarDate", "date", "trainingStatus", "status", "statusKey"),
+    )
+    load_data = _metric_data(
+        load,
+        (
+            "acuteTrainingLoad",
+            "acuteLoad",
+            "chronicTrainingLoad",
+            "chronicLoad",
+            "acuteChronicWorkloadRatio",
+            "acuteChronicRatio",
+            "trainingLoadBalance",
+            "loadBalance",
+        ),
+        ("metricsTrainingLoadBalanceDTOMap",),
+    )
+    vo2_data = _metric_data(
+        vo2_max,
+        ("vo2MaxPreciseValue", "vo2MaxValue", "vo2Max"),
+        ("generic",),
+    )
     acclimation_data = acclimation if isinstance(acclimation, dict) else {}
 
     metrics = _compact(
@@ -232,9 +298,7 @@ def normalize_training_status(payload: dict[str, Any]) -> dict[str, Any]:
             "feedback": _first(
                 status_data, "trainingStatusFeedbackPhrase", "feedbackPhrase", "feedback"
             ),
-            "weekly_training_load": _first(
-                status_data, "weeklyTrainingLoad", "trainingLoad"
-            ),
+            "weekly_training_load": _first(status_data, "weeklyTrainingLoad", "trainingLoad"),
             "acute_training_load": _first(load_data, "acuteTrainingLoad", "acuteLoad"),
             "chronic_training_load": _first(load_data, "chronicTrainingLoad", "chronicLoad"),
             "acute_chronic_ratio": _first(
