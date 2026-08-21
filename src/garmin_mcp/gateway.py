@@ -7,6 +7,16 @@ from typing import Any
 
 from garminconnect import Garmin
 
+from .normalizers import (
+    normalize_activity,
+    normalize_body_battery,
+    normalize_hrv,
+    normalize_sleep,
+    normalize_splits,
+    normalize_training_readiness,
+    normalize_training_status,
+)
+
 
 class GarminGateway:
     """Lazy, token-only connection to the unofficial Garmin Connect client."""
@@ -44,6 +54,72 @@ class GarminGateway:
 
     def list_scheduled(self, year: int, month: int) -> dict[str, Any]:
         return self.client().get_scheduled_workouts(year, month)
+
+    def list_activities(
+        self,
+        start_date: str,
+        end_date: str,
+        activity_type: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        client = self.client()
+        params = {
+            "startDate": start_date,
+            "endDate": end_date,
+            "start": "0",
+            "limit": str(limit),
+            "sortOrder": "desc",
+        }
+        if activity_type:
+            params["activityType"] = activity_type
+        activities = client.connectapi(client.garmin_connect_activities, params=params) or []
+        return [normalize_activity(activity) for activity in activities[:limit]]
+
+    def activity_summary(self, activity_id: int | str) -> dict[str, Any]:
+        return normalize_activity(self.client().get_activity(str(activity_id)))
+
+    def activity_splits(self, activity_id: int | str) -> dict[str, Any]:
+        return normalize_splits(self.client().get_activity_splits(str(activity_id)))
+
+    def recovery_status(self, date: str) -> dict[str, Any]:
+        """Aggregate optional recovery metrics without failing when one source is absent."""
+        client = self.client()
+        result: dict[str, Any] = {"date": date}
+        errors: dict[str, str] = {}
+
+        sources = {
+            "sleep": (
+                lambda: client.get_sleep_data(date),
+                normalize_sleep,
+            ),
+            "hrv": (
+                lambda: client.get_hrv_data(date),
+                normalize_hrv,
+            ),
+            "body_battery": (
+                lambda: client.get_body_battery(date, date),
+                normalize_body_battery,
+            ),
+            "training_readiness": (
+                lambda: client.get_training_readiness(date),
+                normalize_training_readiness,
+            ),
+            "training_status": (
+                lambda: client.get_training_status(date),
+                normalize_training_status,
+            ),
+        }
+
+        for name, (fetch, normalize) in sources.items():
+            try:
+                result[name] = normalize(fetch())
+            except Exception as exc:  # Garmin endpoints can vary by device/account.
+                result[name] = {"available": False}
+                errors[name] = str(exc)
+
+        if errors:
+            result["errors"] = errors
+        return result
 
     def create(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self.client().upload_workout(payload)

@@ -90,6 +90,65 @@ def list_scheduled_workouts(year: int, month: int) -> dict[str, Any]:
     return _gateway.list_scheduled(year, month)
 
 
+@mcp.tool(annotations=READ_ONLY)
+def list_activities(
+    start_date: str,
+    end_date: str | None = None,
+    activity_type: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """List completed Garmin activities in an inclusive YYYY-MM-DD date range.
+
+    Returns compact planning metrics and omits GPS coordinates and owner details.
+    `activity_type` is an optional Garmin type key such as running or cycling.
+    """
+    start = Date.fromisoformat(start_date)
+    end = Date.fromisoformat(end_date) if end_date else start
+    if end < start:
+        raise ValueError("end_date must not be earlier than start_date")
+    if (end - start).days + 1 > 366:
+        raise ValueError("Date range must not exceed 366 days")
+    if limit < 1 or limit > 100:
+        raise ValueError("limit must be between 1 and 100")
+    normalized_type = activity_type.strip() if activity_type else None
+    activities = _gateway.list_activities(
+        start.isoformat(),
+        end.isoformat(),
+        normalized_type or None,
+        limit,
+    )
+    return {
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "activity_type": normalized_type or None,
+        "count": len(activities),
+        "activities": activities,
+    }
+
+
+@mcp.tool(annotations=READ_ONLY)
+def get_activity_summary(activity_id: int) -> dict[str, Any]:
+    """Get compact summary metrics for one completed Garmin activity."""
+    if activity_id < 1:
+        raise ValueError("activity_id must be positive")
+    return _gateway.activity_summary(activity_id)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def get_activity_splits(activity_id: int) -> dict[str, Any]:
+    """Get compact lap and interval metrics for one completed Garmin activity."""
+    if activity_id < 1:
+        raise ValueError("activity_id must be positive")
+    return _gateway.activity_splits(activity_id)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def get_recovery_status(date: str) -> dict[str, Any]:
+    """Get available sleep, HRV, Body Battery, readiness, and training status for a date."""
+    parsed_date = Date.fromisoformat(date)
+    return _gateway.recovery_status(parsed_date.isoformat())
+
+
 @mcp.tool(annotations=WRITE)
 def create_workout(
     workout: WorkoutSpec,

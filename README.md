@@ -13,6 +13,8 @@ through **unofficial** Garmin endpoints.
 - previews Garmin JSON without making changes;
 - creates workouts and optionally adds them to the calendar;
 - lists the workout library and calendar;
+- reads completed activities, compact summaries, and lap/split metrics;
+- reads available sleep, HRV, Body Battery, Training Readiness, and Training Status;
 - deletes workouts and removes workouts from the calendar;
 - supports running, cycling, walking, and hiking;
 - supports time, distance, and `lap button` steps;
@@ -183,6 +185,21 @@ Pace values are specified in seconds per kilometre: `250` = 4:10/km and `260` =
 
 After previewing, call `create_workout` with the same object, a date in `YYYY-MM-DD`
 format, and `confirm=true`.
+
+## Read-only training context
+
+The server exposes compact read-only tools for adapting future plans to completed work:
+
+- `list_activities` lists activities in an inclusive date range, with an optional Garmin
+  activity type filter;
+- `get_activity_summary` returns planning metrics for one activity;
+- `get_activity_splits` returns compact lap and interval metrics;
+- `get_recovery_status` aggregates available sleep, HRV, Body Battery, Training Readiness,
+  and Training Status for one date.
+
+Activity responses intentionally omit GPS coordinates and owner details. Recovery metrics
+vary by Garmin device, account, and date. A missing source is returned as unavailable and
+does not make the entire recovery request fail.
 
 ## Checks
 
