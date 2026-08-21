@@ -1,104 +1,103 @@
 # Personal Garmin MCP
 
-Локальный MCP-сервер для создания и планирования структурированных тренировок в
-Garmin Connect через **неофициальные** Garmin endpoint'ы.
+A local MCP server for creating and scheduling structured workouts in Garmin Connect
+through **unofficial** Garmin endpoints.
 
-> Это экспериментальный личный проект. Garmin может изменить endpoint'ы, ограничить
-> запросы или отозвать сессию без предупреждения. Не публикуйте сервер в интернет без
-> отдельной аутентификации.
+> This is an experimental personal project. Garmin may change the endpoints, rate-limit
+> requests, or revoke a session without notice. Do not expose the server to the internet
+> without adding separate authentication.
 
-## Что реализовано
+## Features
 
-- проверка сохранённой Garmin-сессии;
-- preview Garmin JSON без записи;
-- создание тренировки и опциональное добавление в календарь;
-- просмотр библиотеки тренировок и календаря;
-- удаление тренировки и снятие тренировки с календаря;
-- бег, велосипед, ходьба и хайкинг;
-- временные, дистанционные и `lap button` шаги;
-- интервальные повторы;
-- цели по темпу, пульсу, мощности и каденсу;
-- обязательный `confirm=true` для любых изменений.
+- verifies a saved Garmin session;
+- previews Garmin JSON without making changes;
+- creates workouts and optionally adds them to the calendar;
+- lists the workout library and calendar;
+- deletes workouts and removes workouts from the calendar;
+- supports running, cycling, walking, and hiking;
+- supports time, distance, and `lap button` steps;
+- supports interval repeats;
+- supports pace, heart-rate, power, and cadence targets;
+- requires `confirm=true` for every change.
 
-## Установка
+## Installation
 
-### Docker Compose — рекомендуемый вариант
+### Docker Compose — recommended
 
-Для локального запуска нужен Docker с поддержкой Compose. Соберите образ из корня
-репозитория:
+Local use requires Docker with Compose support. Build the image from the repository root:
 
 ```bash
 docker compose build
 ```
 
-Сборка устанавливает Python-зависимости через `uv` строго из `uv.lock`.
+The build installs Python dependencies with `uv` strictly from `uv.lock`.
 
-Один раз выполните интерактивный вход. Пароль и MFA-код вводятся непосредственно
-в контейнер и не сохраняются; OAuth-токены попадут в приватный named volume
-`garmin-mcp_garmin_tokens`:
+Run the interactive login once. The password and MFA code are entered directly in the
+container and are not stored. OAuth tokens are saved in the private
+`garmin-mcp_garmin_tokens` named volume:
 
 ```bash
 docker compose --profile login run --rm garmin-login
 ```
 
-Запустите MCP:
+Start the MCP server:
 
 ```bash
 docker compose up -d garmin-mcp
 docker compose ps
 ```
 
-Endpoint будет доступен по адресу `http://127.0.0.1:8000/mcp`. Чтобы использовать
-другой локальный порт:
+The endpoint is available at `http://127.0.0.1:8000/mcp`. To use a different local port:
 
 ```bash
 GARMIN_MCP_PORT=8765 docker compose up -d garmin-mcp
 ```
 
-Логи и остановка:
+View logs or stop the server:
 
 ```bash
 docker compose logs -f garmin-mcp
 docker compose down
 ```
 
-`docker compose down` сохраняет Garmin-токены. Команда
-`docker compose down -v` удалит volume вместе с токенами.
+`docker compose down` preserves the Garmin tokens. Running `docker compose down -v`
+deletes the volume and its tokens.
 
-### Локальная установка без Docker
+### Local installation without Docker
 
-Требуются Python 3.12+ и `uv`.
+Python 3.12+ and `uv` are required.
 
 ```bash
 cd /path/to/garmin-mcp
 uv sync --extra dev
 ```
 
-## Одноразовый логин
+## One-time login
 
 ```bash
 uv run garmin-mcp-login
 ```
 
-Скрипт интерактивно спросит email, пароль и, при необходимости, MFA-код. Пароль
-не сохраняется. OAuth-токены сохраняются в `.garmin-tokens/garmin_tokens.json` с
-ограниченными правами. Папка уже добавлена в `.gitignore`.
+The script interactively requests an email address, password, and MFA code when required.
+The password is not stored. OAuth tokens are saved to
+`.garmin-tokens/garmin_tokens.json` with restricted permissions. The directory is already
+included in `.gitignore`.
 
-Можно вынести токены в другое место:
+To store tokens somewhere else:
 
 ```bash
 export GARMIN_TOKEN_DIR=/safe/private/path/garmin-tokens
 uv run garmin-mcp-login
 ```
 
-## Локальный MCP через stdio
+## Local MCP over stdio
 
 ```bash
 export GARMIN_TOKEN_DIR=/safe/private/path/garmin-tokens
 uv run garmin-mcp
 ```
 
-Пример конфигурации MCP-клиента:
+Example MCP client configuration:
 
 ```json
 {
@@ -113,7 +112,7 @@ uv run garmin-mcp
 }
 ```
 
-## Streamable HTTP для ChatGPT
+## Streamable HTTP for ChatGPT
 
 ```bash
 export GARMIN_MCP_TRANSPORT=streamable-http
@@ -125,18 +124,18 @@ uv run garmin-mcp
 
 Endpoint: `http://127.0.0.1:8000/mcp`.
 
-ChatGPT должен иметь возможность обратиться к endpoint по HTTPS. Для личного теста
-можно использовать защищённый туннель. Не выставляйте этот MVP напрямую наружу:
-в нём намеренно нет отдельного OAuth resource server для доступа к самому MCP.
+ChatGPT must be able to reach the endpoint over HTTPS. A protected tunnel can be used for
+personal testing. Do not expose this MVP directly to the internet: it intentionally does
+not include a separate OAuth resource server for access to the MCP server itself.
 
-## Пример аргумента для `preview_workout`
+## Example `preview_workout` argument
 
 ```json
 {
   "workout": {
     "name": "6 x 800",
     "sport": "running",
-    "description": "Контролируемые интервалы",
+    "description": "Controlled intervals",
     "blocks": [
       {
         "steps": [
@@ -179,27 +178,27 @@ ChatGPT должен иметь возможность обратиться к e
 }
 ```
 
-Значения темпа задаются в секундах на километр: `250` = 4:10/км, `260` =
-4:20/км. Сервер сам конвертирует их в m/s, используемые Garmin Connect.
+Pace values are specified in seconds per kilometre: `250` = 4:10/km and `260` =
+4:20/km. The server converts them to the m/s values used by Garmin Connect.
 
-После preview вызовите `create_workout` с тем же объектом, датой `YYYY-MM-DD` и
-`confirm=true`.
+After previewing, call `create_workout` with the same object, a date in `YYYY-MM-DD`
+format, and `confirm=true`.
 
-## Проверка
+## Checks
 
 ```bash
 uv run --extra dev pytest
 uv run --extra dev ruff check .
 ```
 
-Unit-тесты не обращаются к Garmin и не требуют учётных данных.
+Unit tests do not contact Garmin and do not require credentials.
 
-## Важные ограничения
+## Important limitations
 
-- Это не официальный Garmin Training API.
-- Слишком частые логины могут получить HTTP 429; используйте сохранённые токены.
-- Токены дают доступ к Garmin Connect — храните их как пароль.
-- Если создание прошло, а планирование не прошло, инструмент вернёт
-  `created_not_scheduled` и `workout_id`; созданный шаблон останется в библиотеке.
-- Перед реальным использованием проверьте одну простую тренировку в Garmin Connect
-  и на конкретной модели часов.
+- This is not an official Garmin Training API.
+- Frequent logins may receive HTTP 429 responses; reuse saved tokens.
+- Tokens provide access to Garmin Connect and must be protected like a password.
+- If creation succeeds but scheduling fails, the tool returns `created_not_scheduled` and
+  `workout_id`; the created workout remains in the library.
+- Before regular use, test one simple workout in Garmin Connect and on the specific watch
+  model.
