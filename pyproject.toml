@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "personal-garmin-mcp"
+version = "0.1.0"
+description = "Personal MCP server for creating and scheduling Garmin Connect workouts through unofficial endpoints."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+  "garminconnect[workout]==0.3.6",
+  "mcp>=1.27,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.11",
+]
+
+[project.scripts]
+garmin-mcp = "garmin_mcp.server:main"
+garmin-mcp-login = "garmin_mcp.login:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/garmin_mcp"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

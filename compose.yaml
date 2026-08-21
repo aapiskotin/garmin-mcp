@@ -1,0 +1,49 @@
+name: garmin-mcp
+
+services:
+  garmin-login:
+    build:
+      context: .
+    image: personal-garmin-mcp:local
+    entrypoint: ["garmin-mcp-login"]
+    environment:
+      GARMIN_TOKEN_DIR: /data/garmin-tokens
+    volumes:
+      - garmin_tokens:/data/garmin-tokens
+    stdin_open: true
+    tty: true
+    profiles: ["login"]
+    security_opt:
+      - no-new-privileges:true
+
+  garmin-mcp:
+    build:
+      context: .
+    image: personal-garmin-mcp:local
+    environment:
+      GARMIN_MCP_TRANSPORT: streamable-http
+      GARMIN_MCP_HOST: 0.0.0.0
+      GARMIN_MCP_PORT: 8000
+      GARMIN_TOKEN_DIR: /data/garmin-tokens
+    volumes:
+      - garmin_tokens:/data/garmin-tokens
+    ports:
+      - "127.0.0.1:${GARMIN_MCP_PORT:-8000}:8000"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; s=socket.create_connection(('127.0.0.1',8000),2); s.close()",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  garmin_tokens:
