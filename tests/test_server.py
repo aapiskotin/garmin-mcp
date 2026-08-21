@@ -76,3 +76,14 @@ def test_list_activities_rejects_reversed_range(monkeypatch) -> None:
     monkeypatch.setattr(server, "_gateway", FakeGateway())
     with pytest.raises(ValueError, match="end_date"):
         server.list_activities("2026-08-02", "2026-08-01")
+
+
+def test_list_activities_enforces_inclusive_366_day_limit(monkeypatch) -> None:
+    fake = FakeGateway()
+    monkeypatch.setattr(server, "_gateway", fake)
+
+    server.list_activities("2025-08-20", "2026-08-20")
+    assert fake.activity_queries == [("2025-08-20", "2026-08-20", None, 20)]
+
+    with pytest.raises(ValueError, match="366 days"):
+        server.list_activities("2025-08-20", "2026-08-21")

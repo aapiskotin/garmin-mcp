@@ -267,6 +267,14 @@ def normalize_training_status(payload: dict[str, Any]) -> dict[str, Any]:
     load = payload.get("mostRecentTrainingLoadBalance")
     vo2_max = payload.get("mostRecentVO2Max")
     acclimation = payload.get("heatAltitudeAcclimationDTO")
+    nested_acclimation = (
+        vo2_max.get("heatAltitudeAcclimation") if isinstance(vo2_max, dict) else None
+    )
+    acclimation_data: dict[str, Any] = {}
+    if isinstance(nested_acclimation, dict):
+        acclimation_data.update(nested_acclimation)
+    if isinstance(acclimation, dict):
+        acclimation_data.update(acclimation)
     raw_status_data = (
         status.get("latestTrainingStatusData", status) if isinstance(status, dict) else {}
     )
@@ -296,7 +304,6 @@ def normalize_training_status(payload: dict[str, Any]) -> dict[str, Any]:
         ("vo2MaxPreciseValue", "vo2MaxValue", "vo2Max"),
         ("generic",),
     )
-    acclimation_data = acclimation if isinstance(acclimation, dict) else {}
     acute_training_load = _first(
         acute_load_data,
         "dailyTrainingLoadAcute",
@@ -338,10 +345,16 @@ def normalize_training_status(payload: dict[str, Any]) -> dict[str, Any]:
             "load_balance": _first(load_data, "trainingLoadBalance", "loadBalance"),
             "vo2_max": _first(vo2_data, "vo2MaxPreciseValue", "vo2MaxValue", "vo2Max"),
             "heat_acclimation": _first(
-                acclimation_data, "heatAcclimation", "heatAcclimationPercent"
+                acclimation_data,
+                "heatAcclimation",
+                "heatAcclimationPercent",
+                "heatAcclimationPercentage",
             ),
             "altitude_acclimation": _first(
-                acclimation_data, "altitudeAcclimation", "altitudeAcclimationPercent"
+                acclimation_data,
+                "altitudeAcclimation",
+                "altitudeAcclimationPercent",
+                "altitudeAcclimationPercentage",
             ),
         }
     )

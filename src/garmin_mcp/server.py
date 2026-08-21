@@ -106,7 +106,7 @@ def list_activities(
     end = Date.fromisoformat(end_date) if end_date else start
     if end < start:
         raise ValueError("end_date must not be earlier than start_date")
-    if (end - start).days > 366:
+    if (end - start).days + 1 > 366:
         raise ValueError("Date range must not exceed 366 days")
     if limit < 1 or limit > 100:
         raise ValueError("limit must be between 1 and 100")

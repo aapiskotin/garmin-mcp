@@ -213,8 +213,13 @@ def test_normalize_training_status_reads_nested_metrics() -> None:
                 "generic": {
                     "calendarDate": "2026-08-20",
                     "vo2MaxPreciseValue": 52.4,
-                }
+                },
+                "heatAltitudeAcclimation": {
+                    "heatAcclimationPercentage": 37,
+                    "altitudeAcclimation": 1200,
+                },
             },
+            "heatAltitudeAcclimationDTO": None,
         }
     )
 
@@ -224,6 +229,8 @@ def test_normalize_training_status_reads_nested_metrics() -> None:
     assert result["acute_training_load"] == 410
     assert result["chronic_training_load"] == 380
     assert result["vo2_max"] == 52.4
+    assert result["heat_acclimation"] == 37
+    assert result["altitude_acclimation"] == 1200
 
 
 def test_normalize_training_status_reads_acute_load_dto() -> None:
