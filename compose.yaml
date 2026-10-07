@@ -25,10 +25,19 @@ services:
       GARMIN_MCP_HOST: 0.0.0.0
       GARMIN_MCP_PORT: 8000
       GARMIN_TOKEN_DIR: /data/garmin-tokens
+      GARMIN_DATA_DIR: /data/garmin-app
+      GARMIN_ACCOUNT_ID: ${GARMIN_ACCOUNT_ID:-personal}
+      GARMIN_TIMEZONE: ${GARMIN_TIMEZONE:-Europe/Berlin}
+      GARMIN_OVERLAP_DAYS: ${GARMIN_OVERLAP_DAYS:-7}
+      GARMIN_BACKUP_ENABLED: ${GARMIN_BACKUP_ENABLED:-true}
+      GARMIN_BACKUP_TIME: ${GARMIN_BACKUP_TIME:-03:00}
     volumes:
       - garmin_tokens:/data/garmin-tokens
+      - ${GARMIN_DATA_DIR:-./.garmin-data}:/data/garmin-app
+      - ./src/garmin_mcp/features:/app/src/garmin_mcp/features:ro
+      - ./src/garmin_mcp/migrations:/app/src/garmin_mcp/migrations:ro
     ports:
-      - "127.0.0.1:${GARMIN_MCP_PORT:-8000}:8000"
+      - "127.0.0.1:${GARMIN_MCP_PORT:-8765}:8000"
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

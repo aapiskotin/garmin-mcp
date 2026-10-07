@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from datetime import date as Date
 from typing import Any
 
@@ -19,11 +20,25 @@ mcp = FastMCP(
         "or destructive tool with confirm=true. Never request or transmit a Garmin password."
     ),
     host=os.getenv("GARMIN_MCP_HOST", "127.0.0.1"),
-    port=int(os.getenv("GARMIN_MCP_PORT", "8000")),
+    port=int(os.getenv("GARMIN_MCP_PORT", "8765")),
     stateless_http=True,
     json_response=True,
 )
 _gateway = GarminGateway()
+_local = None
+_local_lock = threading.Lock()
+
+
+def local_service():
+    global _local
+    with _local_lock:
+        if _local is None:
+            from .config import Settings
+            from .service import Service
+
+            _local = Service(Settings(), _gateway)
+        return _local
+
 
 READ_ONLY = ToolAnnotations(
     readOnlyHint=True,
@@ -52,8 +67,7 @@ def _require_confirmation(confirm: bool, action: str) -> dict[str, Any] | None:
         "status": "confirmation_required",
         "action": action,
         "message": (
-            "No Garmin changes were made. Ask the user to confirm, "
-            "then retry with confirm=true."
+            "No Garmin changes were made. Ask the user to confirm, then retry with confirm=true."
         ),
     }
 
@@ -225,7 +239,110 @@ def main() -> None:
     transport = os.getenv("GARMIN_MCP_TRANSPORT", "stdio")
     if transport not in {"stdio", "streamable-http"}:
         raise SystemExit("GARMIN_MCP_TRANSPORT must be stdio or streamable-http")
-    mcp.run(transport=transport)
+    if transport == "streamable-http":
+        import uvicorn
+
+        from .api import create_app
+
+        uvicorn.run(
+            create_app(),
+            host=os.getenv("GARMIN_MCP_HOST", "127.0.0.1"),
+            port=int(os.getenv("GARMIN_MCP_PORT", "8765")),
+        )
+    else:
+        from .backup import Backups, BackupScheduler
+
+        with BackupScheduler(Backups(local_service())):
+            mcp.run(transport="stdio")
+
+
+LOCAL_READ = ToolAnnotations(
+    readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False
+)
+LOCAL_WRITE = ToolAnnotations(
+    readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False
+)
+
+
+@mcp.tool(annotations=LOCAL_READ)
+def local_status() -> dict[str, Any]:
+    """Read local coverage, freshness, and errors without contacting Garmin."""
+    return local_service().status()
+
+
+@mcp.tool(annotations=LOCAL_READ)
+def lookup_records(
+    entity: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    activity_id: int | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict:
+    """Read cached activities/days with source freshness and feature status."""
+    return local_service().lookup(entity, start_date, end_date, activity_id, limit, offset)
+
+
+@mcp.tool(annotations=LOCAL_WRITE)
+def refresh_activities(
+    start_date: str | None = None, end_date: str | None = None, dry_run: bool = False
+) -> dict:
+    """Explicitly refresh all activity pages; first call requires start_date. No details fetched."""
+    return local_service().refresh_activities(start_date, end_date, dry_run)
+
+
+@mcp.tool(annotations=LOCAL_WRITE)
+def refresh_activity(activity_id: int, sources: list[str], dry_run: bool = False) -> dict:
+    """Archive only requested summary/splits for an activity."""
+    return local_service().refresh_activity(activity_id, sources, dry_run)
+
+
+@mcp.tool(annotations=LOCAL_WRITE)
+def refresh_day(local_date: str, sources: list[str], dry_run: bool = False) -> dict:
+    """Archive only requested daily sources: sleep, hrv, body_battery, readiness/status."""
+    return local_service().refresh_day(local_date, sources, dry_run)
+
+
+@mcp.tool(annotations=LOCAL_READ)
+def feature_catalog() -> list[dict]:
+    """List available local Python feature definitions; does not compute them."""
+    from .feature_engine import FeatureEngine
+
+    return FeatureEngine(local_service()).catalog()
+
+
+@mcp.tool(annotations=LOCAL_WRITE)
+def recalculate_features(
+    names: list[str], entity: str, ids: list[str], dry_run: bool = False
+) -> dict:
+    """Compute requested features/rows from archives. Report missing inputs without downloading."""
+    from .feature_engine import FeatureEngine
+
+    return FeatureEngine(local_service()).recalculate(names, entity, ids, dry_run)
+
+
+@mcp.tool(annotations=LOCAL_READ)
+def list_backups() -> list[dict]:
+    """List complete local backups."""
+    from .backup import Backups
+
+    return Backups(local_service()).list()
+
+
+@mcp.tool(annotations=LOCAL_WRITE)
+def backup_local(include_tokens: bool = False) -> dict:
+    """Create an online SQLite backup with raw objects, definitions, and checksums."""
+    from .backup import Backups
+
+    return Backups(local_service()).create(include_tokens)
+
+
+@mcp.tool(annotations=DESTRUCTIVE)
+def restore_local(backup_id: str, confirm: bool = False, restore_tokens: bool = False) -> dict:
+    """Restore a verified local backup after confirmation; never replays Garmin actions."""
+    from .backup import Backups
+
+    return Backups(local_service()).restore(backup_id, confirm, restore_tokens)
 
 
 if __name__ == "__main__":

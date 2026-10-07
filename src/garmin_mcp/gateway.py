@@ -26,6 +26,22 @@ class GarminGateway:
         self.token_dir = Path(configured).expanduser().resolve()
         self._client: Garmin | None = None
         self._lock = threading.Lock()
+        self.capture_sink = None
+        self.failure_sink = None
+
+    def _capture(self, source, payload, request):
+        if self.capture_sink is not None:
+            self.capture_sink(source, payload, request)
+
+    def _read(self, source, request, fetch):
+        try:
+            raw = fetch()
+            self._capture(source, raw, request)
+            return raw
+        except Exception as exc:
+            if self.failure_sink is not None:
+                self.failure_sink(source, request, exc)
+            raise
 
     def client(self) -> Garmin:
         with self._lock:
@@ -33,10 +49,8 @@ class GarminGateway:
                 return self._client
             token_file = self.token_dir / "garmin_tokens.json"
             if not token_file.exists():
-                raise RuntimeError(
-                    f"No Garmin tokens at {token_file}. Run garmin-mcp-login first."
-                )
-            client = Garmin()
+                raise RuntimeError(f"No Garmin tokens at {token_file}. Run garmin-mcp-login first.")
+            client = Garmin(retry_attempts=1, retry_min_wait=0.5, retry_max_wait=1)
             client.login(str(self.token_dir))
             self._client = client
             return client
@@ -72,14 +86,63 @@ class GarminGateway:
         }
         if activity_type:
             params["activityType"] = activity_type
-        activities = client.connectapi(client.garmin_connect_activities, params=params) or []
+        activities = self._read(
+            "activity_list",
+            params,
+            lambda: client.connectapi(client.garmin_connect_activities, params=params) or [],
+        )
         return [normalize_activity(activity) for activity in activities[:limit]]
 
     def activity_summary(self, activity_id: int | str) -> dict[str, Any]:
-        return normalize_activity(self.client().get_activity(str(activity_id)))
+        raw = self._read(
+            "summary",
+            {"activity_id": int(activity_id)},
+            lambda: self.client().get_activity(str(activity_id)),
+        )
+        return normalize_activity(raw)
+
+    def activity_page(self, start: str, end: str, offset: int, limit: int) -> list[dict]:
+        client = self.client()
+        return (
+            client.connectapi(
+                client.garmin_connect_activities,
+                params={
+                    "startDate": start,
+                    "endDate": end,
+                    "start": str(offset),
+                    "limit": str(limit),
+                    "sortOrder": "asc",
+                },
+            )
+            or []
+        )
+
+    def raw_activity(self, activity_id: int, source: str):
+        client = self.client()
+        if source == "summary":
+            return client.get_activity(str(activity_id))
+        if source == "splits":
+            return client.get_activity_splits(str(activity_id))
+        raise ValueError("Activity source must be summary or splits")
+
+    def raw_day(self, date: str, source: str):
+        client = self.client()
+        methods = {
+            "sleep": lambda: client.get_sleep_data(date),
+            "hrv": lambda: client.get_hrv_data(date),
+            "body_battery": lambda: client.get_body_battery(date, date),
+            "training_readiness": lambda: client.get_training_readiness(date),
+            "training_status": lambda: client.get_training_status(date),
+        }
+        return methods[source]()
 
     def activity_splits(self, activity_id: int | str) -> dict[str, Any]:
-        return normalize_splits(self.client().get_activity_splits(str(activity_id)))
+        raw = self._read(
+            "splits",
+            {"activity_id": int(activity_id)},
+            lambda: self.client().get_activity_splits(str(activity_id)),
+        )
+        return normalize_splits(raw)
 
     def recovery_status(self, date: str) -> dict[str, Any]:
         """Aggregate optional recovery metrics without failing when one source is absent."""
@@ -112,7 +175,8 @@ class GarminGateway:
 
         for name, (fetch, normalize) in sources.items():
             try:
-                result[name] = normalize(fetch())
+                raw = self._read(name, {"local_date": date}, fetch)
+                result[name] = normalize(raw)
             except Exception as exc:  # Garmin endpoints can vary by device/account.
                 result[name] = {"available": False}
                 errors[name] = str(exc)

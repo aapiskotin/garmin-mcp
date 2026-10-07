@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Garmin · Local training record</title>
+<style>
+:root{font:16px system-ui;color:#e3e9f3;background:#111923;color-scheme:dark}
+body{max-width:1100px;margin:4rem auto;padding:0 1.4rem}h1{font-size:2.1rem;margin-bottom:.5rem}
+p,small{color:#a7b7ca}a{color:#75d3c7}form{display:flex;gap:1rem;flex-wrap:wrap;
+padding:1.4rem;background:#1a2736;border-radius:12px;margin:2rem 0}
+label{display:grid;gap:.4rem;font-size:.85rem}input,select,button{font:inherit;padding:.65rem;
+border-radius:6px;border:1px solid #43566f;background:#162131;color:inherit}
+button{background:#75d3c7;color:#122025;cursor:pointer;align-self:end;font-weight:600}
+article{border:1px solid #344559;border-radius:10px;padding:1rem;margin:1rem 0}
+.bad{color:#ffc78a}.good{color:#75d3c7}pre{overflow:auto;font-size:.8rem;white-space:pre-wrap}
+#status{padding:.8rem 0}details{margin-top:.7rem}h2{font-size:1.1rem}
+</style>
+<h1>Local training record</h1>
+<p>Activity and daily health data saved on this machine.</p>
+<nav><a href="/docs">API documentation</a> · <a href="/openapi.json">OpenAPI</a></nav>
+<div id="status" role="status">Loading local status…</div>
+<form id="lookup">
+<label>Record<select id="entity"><option value="activities">Activities</option>
+<option value="days">Days</option></select></label>
+<label>From<input id="from" type="date"></label><label>Through<input id="to" type="date"></label>
+<label>Activity ID<input id="activity" type="number" min="1" placeholder="Optional"></label>
+<button>Look up</button>
+</form>
+<p>Lookup reads saved data. Downloads and calculations are requested through the API or agent.</p>
+<main id="results" aria-live="polite"></main>
+<button id="more" hidden>Next 100</button>
+<script>
+const el=id=>document.getElementById(id);let offset=0;
+async function json(url){const r=await fetch(url);const data=await r.json();
+ if(!r.ok)throw Error(data.error||'Request failed');return data}
+function text(tag,value,parent,cls){const node=document.createElement(tag);node.textContent=value;
+ if(cls)node.className=cls;parent.append(node);return node}
+async function status(){try{const s=await json('/api/status');el('status').textContent=
+ `${s.counts.activities} activities · ${s.counts.days} days · ${s.timezone} · `+
+ (s.sync.length?'Saved coverage available':'No data downloaded yet');}
+ catch(e){el('status').textContent=e.message}}
+async function lookup(){el('results').replaceChildren();el('more').hidden=true;
+ const p=new URLSearchParams({limit:100,offset});
+ if(el('from').value)p.set('start_date',el('from').value);
+ if(el('to').value)p.set('end_date',el('to').value);
+ if(el('entity').value==='activities'&&el('activity').value)p.set('activity_id',el('activity').value);
+ try{const data=await json('/api/lookup/'+el('entity').value+'?'+p);
+ if(!data.rows.length)text('p','No saved records match this lookup.',el('results'));
+ for(const row of data.rows){const card=text('article','',el('results'));
+ text('h2',`${row.local_date} · ${row.name||row.sport||'Daily health'}`+
+ (row.activity_id?' · #'+row.activity_id:''),card);
+ text('p',row.stale?'Stale or incomplete sources':'Sources recently fetched',card,row.stale?'bad':'good');
+ for(const s of row.sources)text('div',`${s.source}: ${s.status} · fetched ${s.fetched_at||'never'}`+
+ (s.stale?' · stale':'')+(s.error?' · '+s.error:''),card);
+ for(const f of row.features)text('div',`${f.name} v${f.version}: ${f.status}`+
+ (f.error?' · '+f.error:''),card);
+ const details=text('details','',card);text('summary','Saved fields',details);
+ text('pre',JSON.stringify(row,null,2),details);}
+ el('more').hidden=data.rows.length<100;
+ }catch(e){text('p',e.message,el('results'),'bad')}}
+el('lookup').addEventListener('submit',e=>{e.preventDefault();offset=0;lookup()});
+el('more').addEventListener('click',()=>{offset+=100;lookup()});
+el('entity').addEventListener('change',()=>{el('activity').disabled=el('entity').value==='days'});
+status();lookup();
+</script>
+</html>
