@@ -39,4 +39,17 @@ RUN uv sync --locked --extra dev
 COPY tests ./tests
 CMD ["pytest"]
 
+FROM python:3.12-slim AS datasette
+COPY --from=sqlite-build /libsqlite3.so.0 /usr/local/lib/libsqlite3.so.0
+RUN ldconfig
+COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /bin/uv
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+COPY deploy/datasette/requirements.txt /app/requirements.txt
+RUN uv pip install --system --require-hashes -r /app/requirements.txt
+RUN python -c 'import sqlite3; assert sqlite3.sqlite_version_info >= (3, 51, 3)'
+COPY deploy/datasette/metadata.json /app/metadata.json
+EXPOSE 8001
+CMD ["datasette", "/data/garmin-app/garmin.sqlite3", "--host", "0.0.0.0", "--port", "8001", "--metadata", "/app/metadata.json", "--setting", "default_cache_ttl", "0", "--setting", "allow_download", "off"]
+
 FROM base AS runtime

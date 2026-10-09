@@ -54,5 +54,32 @@ services:
       retries: 3
       start_period: 10s
 
+  datasette:
+    build:
+      context: .
+      target: datasette
+    image: personal-garmin-datasette:local
+    depends_on:
+      garmin-mcp:
+        condition: service_healthy
+    volumes:
+      # Mount the directory so SQLite can also read the live WAL and SHM files.
+      - ${GARMIN_DATA_DIR:-./.garmin-data}:/data/garmin-app:ro
+    ports:
+      - "127.0.0.1:${GARMIN_DB_UI_PORT:-8766}:8001"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/garmin.json', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
 volumes:
   garmin_tokens:

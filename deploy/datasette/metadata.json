@@ -1,0 +1,14 @@
+{
+  "title": "Garmin SQLite browser",
+  "description": "Read-only access to the local Garmin database. Browse tables, filter records, run SQL, and export results. Refresh the page to see newly saved data.",
+  "databases": {
+    "garmin": {
+      "description": "Live stored values. Feature values may be stale: check feature_results.status and source timestamps before using them.",
+      "tables": {
+        "activities": {"description": "Saved Garmin activities, keyed by account and activity ID."},
+        "days": {"description": "Saved daily records, keyed by account and local date."},
+        "feature_results": {"description": "Feature provenance and validity. Only status=ok results are usable."}
+      }
+    }
+  }
+}

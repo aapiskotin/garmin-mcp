@@ -17,6 +17,7 @@ that port in the URLs below.
 | Page or endpoint | Clickable URL | Purpose |
 | --- | --- | --- |
 | **Lookup UI** | [http://127.0.0.1:8765/](http://127.0.0.1:8765/) | Browse saved activities and daily data. |
+| **SQLite browser** | [http://127.0.0.1:8766/garmin](http://127.0.0.1:8766/garmin) | Browse all tables, filter rows, run read-only SQL, and export CSV/JSON with Datasette. |
 | **Swagger API docs** | [http://127.0.0.1:8765/docs](http://127.0.0.1:8765/docs) | Inspect and try HTTP API requests. |
 | **MCP endpoint** | [http://127.0.0.1:8765/mcp](http://127.0.0.1:8765/mcp) | Connection URL for a Streamable HTTP MCP client; not a web page. |
 | OpenAPI schema | [http://127.0.0.1:8765/openapi.json](http://127.0.0.1:8765/openapi.json) | Download the HTTP API schema as JSON. |
@@ -75,6 +76,7 @@ Start the MCP server:
 
 ```bash
 docker compose up -d garmin-mcp
+docker compose up -d --build datasette
 docker compose ps
 ```
 
@@ -84,8 +86,41 @@ Open the [lookup UI](http://127.0.0.1:8765/) or
 To use a different local port:
 
 ```bash
-GARMIN_MCP_PORT=8766 docker compose up -d garmin-mcp
+GARMIN_MCP_PORT=8767 docker compose up -d garmin-mcp
 ```
+
+### SQLite web browser
+
+[Datasette](https://docs.datasette.io/en/stable/) runs locally at
+[http://127.0.0.1:8766/garmin](http://127.0.0.1:8766/garmin). Open
+[activities](http://127.0.0.1:8766/garmin/activities) or
+[days](http://127.0.0.1:8766/garmin/days), use column filters, or choose
+**View and edit SQL** to run SELECT queries and joins. Results can be exported
+as CSV or JSON. This reads saved data and never requests Garmin downloads.
+
+Start or rebuild it with `docker compose up -d --build datasette`; stop only the
+browser with `docker compose stop datasette`. It restarts automatically with Docker.
+Set `GARMIN_DB_UI_PORT` to change its port (choose a different port from the app).
+
+The browser shares `GARMIN_DATA_DIR` with the app through a read-only directory
+mount, including SQLite's WAL/SHM files. It uses the same patched SQLite build
+and reads the live database, without immutable mode or a copied snapshot.
+Reload a page after a refresh or recalculation to see newly committed records.
+The app must initialize the database first; Compose waits for its health check.
+The browser binds to `127.0.0.1` and cannot edit the database. It displays raw
+stored columns: consult `feature_results.status` and source timestamps for
+validity; the app's lookup UI additionally masks invalidated feature values.
+
+Datasette dependencies are pinned with hashes in
+`deploy/datasette/requirements.txt`. To update them after editing `requirements.in`:
+
+```bash
+uv pip compile deploy/datasette/requirements.in --python-version 3.12 \
+  --generate-hashes -o deploy/datasette/requirements.txt
+docker compose up -d --build datasette
+```
+
+### Service operations
 
 View logs or stop the server:
 
