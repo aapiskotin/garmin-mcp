@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#142f34">
+<title>Garmin local · Home</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+:root{color-scheme:light;font:16px/1.5 system-ui,-apple-system,sans-serif;color:#162d32;background:#f4f5f0}
+*{box-sizing:border-box}body{margin:0}header{background:#142f34;color:#fff;padding:24px}
+header div,main{max-width:1000px;margin:auto}header strong{font-size:20px}
+main{padding:48px 24px}h1{font-size:clamp(30px,5vw,44px);line-height:1.15;letter-spacing:-1px;margin:0 0 16px}
+p{color:#617376;margin:0 0 24px}h2{font-size:22px;margin:0 0 10px}
+a{color:#16695c}a:focus-visible{outline:3px solid #16695c;outline-offset:5px}
+nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:32px 0}
+.card{display:flex;flex-direction:column;text-decoration:none;color:inherit;background:white;
+border:1px solid #dbe2db;border-radius:14px;padding:26px;transition:border-color .15s}
+.card:hover{border-color:#16695c}.card p{font-size:15px;flex:1;margin-bottom:24px}
+.card span{color:#16695c;font-weight:650}.primary{background:#e6f1e9;border-color:#bfd5c6}
+details{border-top:1px solid #dbe2db;padding:22px 0}summary{cursor:pointer;font-weight:650}
+ul{padding-left:22px}li{margin:12px 0}code{overflow-wrap:anywhere}footer{font-size:13px;color:#617376;margin-top:24px}
+@media(max-width:600px){main{padding:32px 20px}nav{grid-template-columns:1fr}.card{padding:22px}}
+</style>
+</head>
+<body>
+<header><div><strong>Garmin local</strong></div></header>
+<main>
+<h1>Your training, in one place.</h1>
+<p>One starting point for your plans and saved Garmin data. Bookmark this page to return anytime.</p>
+<nav aria-label="Application pages">
+<a class="card primary" href="/training"><h2>Training planner</h2>
+<p>Plan your weeks, record results, and review your training history.</p><span>Open planner →</span></a>
+<a class="card" href="/"><h2>Saved activities &amp; health</h2>
+<p>Look up activities and daily health records by date, with source freshness and coverage.</p><span>Browse saved data →</span></a>
+<a class="card" href="http://127.0.0.1:{{db_ui_port}}/garmin"><h2>Database browser</h2>
+<p>Explore tables, filter records, and export data with Datasette. This separate local service is read-only.</p><span>Open database browser →</span></a>
+<a class="card" href="/docs"><h2>API documentation</h2>
+<p>Explore available operations and make requests through the interactive API documentation.</p><span>Open API documentation →</span></a>
+</nav>
+<details><summary>Service links &amp; integrations</summary>
+<ul>
+<li><a href="/api/status">Local status and data coverage</a></li>
+<li><a href="/api/backups">Saved backups</a></li>
+<li><a href="/api/features">Feature catalog</a></li>
+<li><a href="/openapi.json">OpenAPI schema</a></li>
+</ul>
+<p>MCP connection URL (for your MCP client): <code id="mcp-url">/mcp</code></p>
+</details>
+<footer>Runs on this computer. Opening this page does not download Garmin data or change your plans.</footer>
+</main>
+<script>document.getElementById('mcp-url').textContent = new URL('/mcp', location.href).href;</script>
+</body>
+</html>

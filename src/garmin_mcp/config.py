@@ -20,6 +20,9 @@ class Settings:
     refresh_timeout: float = 120
     wait_timeout: float = 130
     stale_hours: int = 24
+    db_ui_port: int = field(
+        default_factory=lambda: int(os.getenv("GARMIN_DB_UI_PORT", "8766"))
+    )
     backup_time: str = field(default_factory=lambda: os.getenv("GARMIN_BACKUP_TIME", "03:00"))
     backup_enabled: bool = field(
         default_factory=lambda: os.getenv("GARMIN_BACKUP_ENABLED", "true").lower() == "true"
@@ -28,6 +31,8 @@ class Settings:
     def __post_init__(self):
         ZoneInfo(self.timezone)
         time.fromisoformat(self.backup_time)
+        if not 1 <= self.db_ui_port <= 65535:
+            raise ValueError("Invalid database browser port")
         if not self.account_id or self.overlap_days < 0:
             raise ValueError("Set an account ID and nonnegative overlap")
         if not 1 <= self.page_size <= 1000 or self.max_pages < 1:

@@ -24,6 +24,7 @@ services:
       GARMIN_MCP_TRANSPORT: streamable-http
       GARMIN_MCP_HOST: 0.0.0.0
       GARMIN_MCP_PORT: 8000
+      GARMIN_DB_UI_PORT: ${GARMIN_DB_UI_PORT:-8766}
       GARMIN_TOKEN_DIR: /data/garmin-tokens
       GARMIN_DATA_DIR: /data/garmin-app
       GARMIN_ACCOUNT_ID: ${GARMIN_ACCOUNT_ID:-personal}

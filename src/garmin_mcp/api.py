@@ -7,7 +7,7 @@ from typing import Literal
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -118,6 +118,15 @@ def create_app(service=None, mount_mcp=True):
             },
             500,
         )
+
+    @app.get("/favicon.svg", include_in_schema=False)
+    def favicon():
+        return FileResponse(Path(__file__).parent / "favicon.svg", media_type="image/svg+xml")
+
+    @app.get("/home", response_class=HTMLResponse, include_in_schema=False)
+    def home():
+        page = (Path(__file__).parent / "home.html").read_text()
+        return page.replace("{{db_ui_port}}", str(service.settings.db_ui_port))
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def ui():

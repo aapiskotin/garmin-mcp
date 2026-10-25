@@ -10,12 +10,16 @@ structured workouts through **unofficial** Garmin endpoints.
 
 ## Important URLs and endpoints
 
+**Bookmark [Garmin home](http://127.0.0.1:8765/home)** for one starting page linking
+to the planner, saved data, database browser, and API documentation.
+
 These links work after starting Docker Compose or the server in `streamable-http`
 mode. They use the default local port, `8765`; if you change `GARMIN_MCP_PORT`, use
 that port in the URLs below.
 
 | Page or endpoint | Clickable URL | Purpose |
 | --- | --- | --- |
+| **Home** | [http://127.0.0.1:8765/home](http://127.0.0.1:8765/home) | All application pages and service links in one place. |
 | **Training planner** | [http://127.0.0.1:8765/training](http://127.0.0.1:8765/training) | Create cycles, edit weekly plans, record execution, and review history. |
 | **Lookup UI** | [http://127.0.0.1:8765/](http://127.0.0.1:8765/) | Browse saved activities and daily data. |
 | **SQLite browser** | [http://127.0.0.1:8766/garmin](http://127.0.0.1:8766/garmin) | Browse all tables, filter rows, run read-only SQL, and export CSV/JSON with Datasette. |
@@ -190,7 +194,7 @@ docker compose up -d --build datasette
 docker compose ps
 ```
 
-Open the [lookup UI](http://127.0.0.1:8765/) or
+Open [Garmin home](http://127.0.0.1:8765/home) or
 [Swagger API docs](http://127.0.0.1:8765/docs). See
 [Important URLs and endpoints](#important-urls-and-endpoints) for all quick links.
 To use a different local port:
@@ -211,6 +215,8 @@ as CSV or JSON. This reads saved data and never requests Garmin downloads.
 Start or rebuild it with `docker compose up -d --build datasette`; stop only the
 browser with `docker compose stop datasette`. It restarts automatically with Docker.
 Set `GARMIN_DB_UI_PORT` to change its port (choose a different port from the app).
+Recreate the app service too after changing this port so the home page link updates:
+`docker compose up -d garmin-mcp datasette`.
 
 The browser shares `GARMIN_DATA_DIR` with the app through a read-only directory
 mount, including SQLite's WAL/SHM files. It uses the same patched SQLite build
