@@ -755,3 +755,131 @@ def test_wal_sidecars_remain_available_between_requests(local, training):
         assert db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0] == 0
     assert training.get_cycle(created["cycle_id"])["cycle"]["id"] == created["cycle_id"]
     local.store.close()
+
+
+def mixed_plan():
+    snapshot = plan()
+    snapshot["weeks"][0].update(sport="running", duration_min_s=1800, duration_max_s=2400)
+    snapshot["sessions"] = [
+        dict(
+            id="easy",
+            week_id="w1",
+            date="2026-01-02",
+            kind="easy",
+            sport="running",
+            duration_min_s=1800,
+            duration_max_s=2400,
+        ),
+        dict(
+            id="commute",
+            week_id="w1",
+            date="2026-01-01",
+            kind="other",
+            sport="cycling",
+            duration_min_s=1800,
+            duration_max_s=1800,
+        ),
+    ]
+    snapshot["constraints"] = [
+        dict(
+            id="run-days",
+            name="Running only",
+            start_date="2026-01-01",
+            end_date="2026-03-01",
+            sport="running",
+            available_days=[4, 6],
+            daily_budget_s=2400,
+            weekly_budget_s=2400,
+        )
+    ]
+    return snapshot
+
+
+def test_sport_scope_warnings_and_persistence(training):
+    from garmin_mcp.training.snapshots import warnings
+
+    snapshot = mixed_plan()
+    created = create(training, snapshot)
+    saved = training.get_cycle(created["cycle_id"])["snapshot"]
+    assert saved["weeks"][0]["sport"] == "running"
+    assert saved["constraints"][0]["sport"] == "running"
+    assert warnings(saved) == []
+    commute = next(s for s in saved["sessions"] if s["id"] == "commute")
+    commute["sport"] = "running"
+    messages = " ".join(w["message"] for w in warnings(saved))
+    assert "unavailable day" in messages
+    assert "duration outside weekly target" in messages
+    assert "weekly duration budget exceeded" in messages
+    commute.update(date="2026-01-02", sport="cycling")
+    assert warnings(saved) == []  # Daily running budget excludes same-day cycling.
+    saved["constraints"][0]["sport"] = None
+    assert any("daily duration budget exceeded" in w["message"] for w in warnings(saved))
+
+
+def test_report_separates_sports_and_manual_original_assignment(local, training):
+    created = create(training, mixed_plan())
+    local.gateway.activities = [
+        {**activity(1), "activityType": {"typeKey": "running"}},
+        {**activity(2, distance=10000), "activityType": {"typeKey": "road_biking"}},
+    ]
+    refresh(local)
+    outcome(training, created, session_id="commute", duration_s=1800, distance_m=6000)
+    report = training.context(created["cycle_id"])
+    week = report["weeks"][0]
+    assert week["actual_totals"]["distance_m"]["value"] == 5000
+    assert week["scheduled_totals"]["duration_max_s"]["value"] == 2400
+    assert week["by_sport"]["cycling"]["actual_totals"]["distance_m"]["value"] == 16000
+    assert week["all_sports_totals"]["actual_totals"]["distance_m"]["value"] == 21000
+    updated = training.get_cycle(created["cycle_id"])["snapshot"]
+    next(s for s in updated["sessions"] if s["id"] == "commute")["sport"] = "bouldering"
+    apply(training, created, draft(training, created, updated))
+    week = training.context(created["cycle_id"])["weeks"][0]
+    assert week["by_sport"]["cycling"]["actual_totals"]["distance_m"]["value"] == 16000
+    assert week["by_sport"]["bouldering"]["actual_totals"]["duration_s"]["value"] == 0
+    # Missing coverage remains unknown separately for each sport.
+    with local.store.transaction() as db:
+        db.execute("DELETE FROM coverage")
+    week = training.context(created["cycle_id"])["weeks"][0]
+    assert week["by_sport"]["running"]["actual_totals"]["distance_m"]["value"] is None
+    assert week["by_sport"]["running"]["actual_totals"]["distance_m"]["known_sum"] == 5000
+
+
+def test_replacement_preserves_history_and_running_totals(training):
+    snapshot = mixed_plan()
+    snapshot["weeks"][0]["duration_min_s"] = None
+    created = create(training, snapshot)
+    snapshot["sessions"][0]["state"] = "cancelled"
+    snapshot["sessions"].append(
+        dict(
+            id="ride",
+            week_id="w1",
+            date="2026-01-02",
+            kind="long",
+            sport="cycling",
+            duration_min_s=7200,
+            duration_max_s=7200,
+            replaces_session_id="easy",
+        )
+    )
+    changed = draft(training, created, snapshot)
+    apply(training, created, changed)
+    report = training.context(created["cycle_id"])
+    assert report["weeks"][0]["scheduled_totals"]["duration_max_s"]["value"] == 0
+    assert (
+        report["weeks"][0]["by_sport"]["cycling"]["scheduled_totals"]["duration_max_s"]["value"]
+        == 9000
+    )
+    original = training.get_cycle(created["cycle_id"], created["revision_id"])["snapshot"]
+    assert original["sessions"][0]["state"] == "planned"
+    current = training.get_cycle(created["cycle_id"])["snapshot"]
+    from garmin_mcp.training.snapshots import restore_plan
+
+    restored = models.Snapshot.model_validate(restore_plan(original, current))
+    assert next(s for s in restored.sessions if s.id == "ride").state == "cancelled"
+    snapshot["sessions"][0]["state"] = "planned"
+    with pytest.raises(ValidationError, match="cancelled session"):
+        models.Snapshot.model_validate(snapshot)
+    snapshot["sessions"][0]["state"] = "cancelled"
+    snapshot["sessions"].append({**snapshot["sessions"][-1], "id": "duplicate"})
+    with pytest.raises(ValidationError, match="one active replacement"):
+        models.Snapshot.model_validate(snapshot)

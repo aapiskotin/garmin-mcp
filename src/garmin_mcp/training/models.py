@@ -104,6 +104,7 @@ class Constraint(Period):
     weekly_budget_s: Nonnegative | None = None
     preferences: str = ""
     limitations: str = ""
+    sport: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class Phase(Period):
@@ -119,6 +120,7 @@ class Week(Targets):
     phase_id: ID | None = None
     detail: Literal["outline", "scheduled"] = "outline"
     focus: str = ""
+    sport: str | None = Field(default=None, min_length=1, max_length=100)
 
     @field_validator("start_date")
     @classmethod
@@ -225,6 +227,7 @@ class Snapshot(Model):
                 phase = phases.get(week.phase_id)
                 if not phase or week.start_date > phase.end_date or end < phase.start_date:
                     raise ValueError("Week must overlap its phase")
+        sessions = {s.id: s for s in self.sessions}
         for session in self.sessions:
             week = weeks.get(session.week_id)
             if not week or not week.start_date <= session.date <= week.start_date + timedelta(
@@ -235,6 +238,25 @@ class Snapshot(Model):
                 raise ValueError("Session falls outside cycle")
             if session.replaces_session_id == session.id:
                 raise ValueError("Session cannot replace itself")
+            if session.replaces_session_id:
+                replaced = sessions.get(session.replaces_session_id)
+                if replaced is None or (
+                    session.state != "cancelled" and replaced.state != "cancelled"
+                ):
+                    raise ValueError("A replacement must reference a cancelled session")
+                seen = {session.id}
+                while replaced is not None:
+                    if replaced.id in seen:
+                        raise ValueError("Circular session replacement")
+                    seen.add(replaced.id)
+                    replaced = sessions.get(replaced.replaces_session_id)
+        active_replacements = [
+            s.replaces_session_id
+            for s in self.sessions
+            if s.replaces_session_id and s.state != "cancelled"
+        ]
+        if len(active_replacements) != len(set(active_replacements)):
+            raise ValueError("A session can only have one active replacement")
         return self
 
 

@@ -135,6 +135,14 @@ an optional existing `WorkoutSpec` under `workout`. For alternatives, provide
 Constraint weekday indices are Monday=0 through Sunday=6; null means unspecified,
 while an empty list means no available days.
 
+Constraints and weekly targets optionally specify `sport`; null keeps the existing
+all-sports scope. New cycles in the UI default to running availability and targets.
+Weekly reports include `by_sport` and `all_sports_totals`, with running and cycling
+subtypes grouped together. The main totals follow the week's target sport; manual
+facts retain the sport of their assessed assignment. Cycling distance never counts
+toward a running target. The Replace action cancels an assignment and creates a
+linked replacement with its own sport and targets; it does not change Garmin.
+
 Warnings do not silently override availability or volume targets: applying a
 snapshot with warnings requires `override_explanation`. Other invalid references,
 dates, units, or transitions return `validation_error` (422), missing records return

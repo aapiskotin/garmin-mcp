@@ -110,6 +110,19 @@ def targets(session):
     return session
 
 
+def sport_group(sport):
+    """Group Garmin subtypes without changing the saved source sport."""
+    if sport in {"cycling", "road_biking", "mountain_biking", "indoor_cycling", "gravel_cycling"}:
+        return "cycling"
+    if sport in {"running", "trail_running", "treadmill_running", "track_running"}:
+        return "running"
+    return sport or "unknown"
+
+
+def in_sport(item, sport):
+    return sport is None or sport_group(item.get("sport")) == sport_group(sport)
+
+
 def warnings(snapshot):
     result = []
     from datetime import date, timedelta
@@ -119,6 +132,8 @@ def warnings(snapshot):
             continue
         day = date.fromisoformat(session["date"])
         for constraint in snapshot["constraints"]:
+            if not in_sport(session, constraint.get("sport")):
+                continue
             if constraint["start_date"] <= session["date"] <= constraint["end_date"]:
                 reasons = []
                 if (
@@ -135,6 +150,7 @@ def warnings(snapshot):
                     if s["date"] == session["date"]
                     and s["state"] != "cancelled"
                     and s["kind"] != "rest"
+                    and in_sport(s, constraint.get("sport"))
                 ]
                 durations = [targets(s)["duration_max_s"] for s in daily]
                 if budget is not None:
@@ -157,10 +173,11 @@ def warnings(snapshot):
             if s["week_id"] == week["id"] and s["state"] != "cancelled" and s["kind"] != "rest"
         ]
         if week["detail"] == "scheduled":
+            scoped = [s for s in sessions if in_sport(s, week.get("sport"))]
             for metric in ("distance", "duration"):
                 unit = "m" if metric == "distance" else "s"
                 low, high = f"{metric}_min_{unit}", f"{metric}_max_{unit}"
-                lo, hi = [targets(s)[low] for s in sessions], [targets(s)[high] for s in sessions]
+                lo, hi = [targets(s)[low] for s in scoped], [targets(s)[high] for s in scoped]
                 if (
                     week[low] is not None and all(v is not None for v in hi) and sum(hi) < week[low]
                 ) or (
@@ -178,7 +195,12 @@ def warnings(snapshot):
                 and constraint["start_date"] <= end
                 and constraint["end_date"] >= week["start_date"]
             ):
-                durations = [targets(s)["duration_max_s"] for s in sessions]
+                durations = [
+                    targets(s)["duration_max_s"]
+                    for s in sessions
+                    if constraint["start_date"] <= s["date"] <= constraint["end_date"]
+                    and in_sport(s, constraint.get("sport"))
+                ]
                 if (
                     any(v is None for v in durations)
                     or sum(durations) > constraint["weekly_budget_s"]

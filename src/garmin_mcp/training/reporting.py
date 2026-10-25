@@ -28,6 +28,27 @@ def total(values, known_empty=True):
     }
 
 
+def volume_totals(planned, activities, manual, detail, coverage_complete, sport=None):
+    planned = [s for s in planned if snapshots.in_sport(s, sport)]
+    activities = [a for a in activities if snapshots.in_sport(a, sport)]
+    manual = [o for o in manual if snapshots.in_sport(o, sport)]
+    scheduled = {
+        field: total(
+            [snapshots.targets(s)[field] for s in planned], known_empty=detail == "scheduled"
+        )
+        for field in ("distance_min_m", "distance_max_m", "duration_min_s", "duration_max_s")
+    }
+    actual = {
+        metric: total([a[metric] for a in activities] + [o[metric] for o in manual])
+        for metric in ("distance_m", "duration_s")
+    }
+    for metric in actual.values():
+        if not coverage_complete:
+            metric["value"] = None
+        metric["complete"] = coverage_complete and metric["value"] is not None
+    return {"scheduled_totals": scheduled, "actual_totals": actual}
+
+
 def session_actual(session, outcome, links, all_links, activities):
     result = {
         "status": outcome["status"] if outcome else "unknown",
@@ -149,6 +170,15 @@ def context(service, db, cycle, snapshot, start_date, end_date):
         fail("validation_error", "Use an ordered range of at most 3661 days")
     account, cycle_id = service.account, cycle["id"]
     outcomes = {r["session_id"]: r for r in rows(db, "session_outcomes", account, cycle_id)}
+    # Manual facts retain the sport of their assessed assignment after plan edits.
+    for row in db.execute(
+        "SELECT o.session_id,s.sport FROM session_outcomes o JOIN session_versions s "
+        "ON s.account_id=o.account_id AND s.cycle_id=o.cycle_id "
+        "AND s.revision_id=o.session_revision_id AND s.id=o.session_id "
+        "WHERE o.account_id=? AND o.cycle_id=?",
+        (account, cycle_id),
+    ):
+        outcomes[row["session_id"]]["sport"] = row["sport"]
     matches = rows(db, "activity_matches", account, cycle_id)
     all_matches = [
         snapshots.decoded(r)
@@ -268,28 +298,30 @@ def context(service, db, cycle, snapshot, start_date, end_date):
         ]
         manual_week = [o for o in manual if week["start_date"] <= o["actual_date"] <= week_end]
         coverage = quality(service, db, week["start_date"], week_end, zone)
-        planned_totals = {
-            field: total(
-                [snapshots.targets(s)[field] for s in planned],
-                known_empty=week["detail"] == "scheduled",
-            )
-            for field in ("distance_min_m", "distance_max_m", "duration_min_s", "duration_max_s")
+
+        sports = {
+            snapshots.sport_group(x.get("sport"))
+            for x in [*planned, *actual_activities, *manual_week]
         }
-        actual_totals = {
-            metric: total([a[metric] for a in actual_activities] + [o[metric] for o in manual_week])
-            for metric in ("distance_m", "duration_s")
-        }
-        for metric in actual_totals.values():
-            if not coverage["activity_coverage_complete"]:
-                metric["value"] = None
-            metric["complete"] = (
-                coverage["activity_coverage_complete"] and metric["value"] is not None
+        if week.get("sport"):
+            sports.add(snapshots.sport_group(week["sport"]))
+        totals = {
+            sport: volume_totals(
+                planned,
+                actual_activities,
+                manual_week,
+                week["detail"],
+                coverage["activity_coverage_complete"],
+                sport,
             )
+            for sport in sports | {None}
+        }
         weeks.append(
             {
                 **week,
-                "scheduled_totals": planned_totals,
-                "actual_totals": actual_totals,
+                **totals[snapshots.sport_group(week["sport"]) if week.get("sport") else None],
+                "by_sport": {sport: totals[sport] for sport in sorted(sports)},
+                "all_sports_totals": totals[None],
                 "unique_activity_count": len(actual_activities),
                 "manual_fact_count": len(manual_week),
                 "coverage": coverage,
