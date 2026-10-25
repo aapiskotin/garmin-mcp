@@ -20,7 +20,8 @@ write tools still require an approved preview and `confirm=true`.
 - Used definition code: `definitions/<code_hash>.py` in the data directory.
 - Backups: `backups/<backup_id>/`, with `backup.json` checksums and code/config IDs.
 - Local endpoints: `http://127.0.0.1:8765/mcp`, `/docs`, `/openapi.json`, `/`.
-  The UI only reads cached records. Run one server process per data directory.
+  The lookup UI only reads cached records. `/training` edits local plans.
+  Run one server process per data directory.
 
 Use the Docker runtime for DB operations if host Python lacks patched SQLite.
 The image builds verified SQLite 3.51.3; the app rejects unpatched WAL versions.
@@ -126,3 +127,62 @@ integrity, account, migrations, and references, and makes a safety backup. Token
 restore is separately opt-in. It never executes backed-up code or replays Garmin
 writes. Saved code/configuration are recovery artifacts; rebuild compatible code
 before restoring an incompatible migration set. Local backups do not cover host loss.
+
+## Training planner (daily-use release)
+
+Follow `specs/training-plan.md`; use `training.TrainingService` for plan mutations.
+The editable local UI is `/training`. `/` and Datasette remain read-only.
+Read `training_get_cycle` and `training_context` before recommending changes.
+Context contains goals, events, constraints, period sessions, original assessed
+assignments, actual records, feedback, reviews, and source completeness. No training
+read calls Garmin or computes features. Candidate search is an explicit local-only
+operation and never confirms a link.
+
+`training_create_cycle` accepts an initial `snapshot`, author, reason, and idempotency
+key. A snapshot has a cycle plus events, constraints, phases, weeks, and sessions.
+IDs in those collections are stable local identifiers. Weeks begin on Monday.
+Distances use metres, durations seconds, pace seconds/km, and heart rate bpm.
+Unknown values remain null. Use `WorkoutSpec` inside a session's version-1 structure;
+only the explicitly selected variant counts toward planned volume.
+
+For changes, call `training_create_draft` with the full updated snapshot and
+`expected_revision_id`. The revision returned is still a proposal. Compare with
+`training_compare` (`from_revision_id`, `to_revision_id`) before applying.
+User instructions to save local changes authorize `training_apply_draft` directly;
+unrequested coaching recommendations remain drafts. Applying needs the current
+revision ID, draft version, idempotency key, author, reason, and an explanation if
+constraint/volume warnings are overridden. A stale revision/draft returns conflict.
+Edit drafts with `training_edit_draft`; discard with `training_discard_draft`.
+Pass `base_revision_id` without a snapshot to create a restoration draft; later
+sessions remain cancelled, and any necessary date-envelope changes appear in the diff.
+
+All these operations are exposed under `/api/training`; see README for the exact
+HTTP/MCP mapping and Swagger for request schemas. MCP mutations use a typed `body`.
+The API does not accept account IDs from callers: it uses the configured account.
+Operational mutations use `expected_version=0` to create and the returned record
+version to edit, in addition to the current accepted plan's revision ID.
+
+Use `training_save_outcome` for explicit unknown/completed/partial/skipped execution.
+Preserve `session_revision_id` after execution begins. `metrics_source` is manual,
+garmin, or none; rest has no activity metrics. Use `training_save_match` to confirm,
+reject, or adjust links. Shared activities need explicit time and distance allocations
+for every linked session; otherwise session comparisons remain incomplete. Weekly
+volume counts unique activities plus unlinked manual facts. A linked manual fact is
+not added twice; selecting manual metrics only affects that session's assessment.
+Garmin corrections mark matches/reviews `needs_review`, increment their versions,
+and retain before/after audit evidence. Re-read before reconfirming.
+
+Use `training_save_feedback` for effort (1–10), wellbeing, or comments, with or without
+a session. Use `training_save_review` for conclusions, limitations, source capture IDs,
+and an optional proposed revision. `training_history` includes operational edits.
+Complete/cancel via `training_lifecycle`; start a new cycle for a new main goal.
+
+Planning storage is defined in `migrations/002_training.sql`. Typed version tables
+are full snapshots keyed by account/cycle/revision/entity. Accepted snapshots cannot
+be edited. Plan changes, acceptance, and the cycle's current pointer commit together.
+Execution, matches, feedback, and reviews are independent audited records. They are
+included automatically in the existing verified SQLite backup/restore flow.
+
+Managed publication from plans is deferred. Never infer that saving a plan creates
+or schedules Garmin workouts. The original Garmin tools retain explicit preview and
+confirmation requirements; the planner does not silently call them.

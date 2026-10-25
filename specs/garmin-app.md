@@ -2,6 +2,10 @@
 
 Status: draft; requirements updated from user decisions.
 
+Training preparation and plan management are specified separately in
+[Training plan specification](training-plan.md). It extends this baseline
+with an editable local planning UI; existing data lookup remains read-only.
+
 - Agent is an active developer and direct SQLite user; it owns analysis,
   Python feature code/migrations, raw-object exploration, and training advice.
 - Run everything on this machine via Docker Compose; use SQLite.

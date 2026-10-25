@@ -345,5 +345,10 @@ def restore_local(backup_id: str, confirm: bool = False, restore_tokens: bool = 
     return Backups(local_service()).restore(backup_id, confirm, restore_tokens)
 
 
+from .training.api import add_mcp  # noqa: E402
+
+add_mcp(mcp, local_service)
+
+
 if __name__ == "__main__":
     main()

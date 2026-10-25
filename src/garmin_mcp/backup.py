@@ -141,6 +141,9 @@ class Backups:
             raise ValueError("Backup database integrity check failed")
         if db.execute("PRAGMA foreign_key_check").fetchall():
             raise ValueError("Backup database contains broken references")
+        from .training.snapshots import validate_backup
+
+        validate_backup(db)
 
     def verify_directory(self, directory):
         manifest = json.loads((directory / "backup.json").read_bytes())

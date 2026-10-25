@@ -54,6 +54,17 @@ class Store:
             db.execute("PRAGMA journal_mode=WAL")
         self.migrate()
         settings.database.chmod(0o600)
+        # Keep WAL/SHM available between short requests so the read-only Datasette
+        # process can attach without trying to create files on its read-only mount.
+        # No transaction remains open: this does not pin a read snapshot or block checkpoints.
+        self._wal_anchor = sqlite3.connect(settings.database, timeout=5, check_same_thread=False)
+        self._wal_anchor.execute("SELECT count(*) FROM sqlite_schema").fetchone()
+
+    def close(self):
+        with self.lock:
+            if self._wal_anchor is not None:
+                self._wal_anchor.close()
+                self._wal_anchor = None
 
     @contextmanager
     def connection(self):

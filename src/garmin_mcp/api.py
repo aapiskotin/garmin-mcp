@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -55,12 +56,15 @@ def create_app(service=None, mount_mcp=True):
 
     @asynccontextmanager
     async def lifespan(app):
-        with BackupScheduler(backups):
-            if mcp_app:
-                async with server.mcp.session_manager.run():
+        try:
+            with BackupScheduler(backups):
+                if mcp_app:
+                    async with server.mcp.session_manager.run():
+                        yield
+                else:
                     yield
-            else:
-                yield
+        finally:
+            service.store.close()
 
     app = FastAPI(title="Local Garmin app", version="0.2.0", lifespan=lifespan)
     app.add_middleware(
@@ -79,6 +83,25 @@ def create_app(service=None, mount_mcp=True):
         if origin and origin.rstrip("/") != str(request.base_url).rstrip("/"):
             return JSONResponse({"status": "error", "error": "Cross-origin access denied"}, 403)
         return await call_next(request)
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation(request, exc):
+        from fastapi.exception_handlers import request_validation_exception_handler
+
+        if request.url.path.startswith("/api/training"):
+            errors = [
+                {"loc": list(e["loc"]), "message": e["msg"], "type": e["type"]}
+                for e in exc.errors()
+            ]
+            return JSONResponse(
+                {
+                    "status": "validation_error",
+                    "message": "Invalid training input",
+                    "errors": errors,
+                },
+                422,
+            )
+        return await request_validation_exception_handler(request, exc)
 
     @app.exception_handler(ValueError)
     async def invalid_request(request, exc):
@@ -169,6 +192,9 @@ def create_app(service=None, mount_mcp=True):
             tags=["Garmin (explicit request)"],
             name=name,
         )
+    from .training.api import add_http
+
+    add_http(app, service)
     if mcp_app:
         app.mount("/", mcp_app)
     return app
